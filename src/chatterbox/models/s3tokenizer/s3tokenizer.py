@@ -150,19 +150,38 @@ class S3Tokenizer(S3TokenizerV2):
         if not torch.is_tensor(audio):
             audio = torch.from_numpy(audio)
 
-        audio = audio.to(self.device)
+        # Move to CPU for stft/abs operations if on NPU due to Complex64 limitations
+        original_device = self.device
+        is_npu = hasattr(original_device, 'type') and original_device.type == 'npu' or \
+                 isinstance(original_device, str) and original_device == 'npu'
+        
+        if is_npu:
+            device = 'cpu'
+            audio = audio.to(device)
+            window = self.window.to(device)
+            mel_filters = self._mel_filters.to(device)
+        else:
+            device = self.device
+            window = self.window.to(device)
+            mel_filters = self._mel_filters.to(device)
+
+        audio = audio.to(device)
         if padding > 0:
             audio = F.pad(audio, (0, padding))
         stft = torch.stft(
             audio, self.n_fft, S3_HOP,
-            window=self.window.to(self.device),
+            window=window,
             return_complex=True
         )
         magnitudes = stft[..., :-1].abs()**2
 
-        mel_spec = self._mel_filters.to(self.device) @ magnitudes
+        mel_spec = mel_filters @ magnitudes
 
         log_spec = torch.clamp(mel_spec, min=1e-10).log10()
         log_spec = torch.maximum(log_spec, log_spec.max() - 8.0)
         log_spec = (log_spec + 4.0) / 4.0
+        
+        if is_npu:
+            log_spec = log_spec.to(original_device)
+            
         return log_spec

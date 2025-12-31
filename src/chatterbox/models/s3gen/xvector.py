@@ -47,7 +47,18 @@ def extract_feature(audio):
     feature_times = []
     feature_lengths = []
     for au in audio:
+        # Move to CPU for Kaldi.fbank as it relies on torch.fft.rfft().abs()
+        # which is not fully supported for Complex64 on Ascend NPU yet
+        device = au.device
+        if device.type == 'npu':
+            au = au.cpu()
+            
         feature = Kaldi.fbank(au.unsqueeze(0), num_mel_bins=80)
+        
+        # Move back to original device
+        if device.type == 'npu':
+            feature = feature.to(device)
+            
         feature = feature - feature.mean(dim=0, keepdim=True)
         features.append(feature)
         feature_times.append(au.shape[0])
