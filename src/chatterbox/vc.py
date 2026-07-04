@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import librosa
@@ -67,11 +68,19 @@ class ChatterboxVC:
             else:
                 print("MPS not available because the current MacOS version is not 12.3+ and/or you do not have an MPS-enabled device on this machine.")
             device = "cpu"
-            
-        for fpath in ["s3gen.safetensors", "conds.pt"]:
-            local_path = hf_hub_download(repo_id=REPO_ID, filename=fpath)
 
-        return cls.from_local(Path(local_path).parent, device)
+        # 优先从本地目录加载，下载失败才走 HF
+        local_dir = os.getenv("CHATTERBOX_MODEL_DIR", "/data/workdir/chatterbox_models")
+        local_path = Path(local_dir)
+        if local_path.exists() and all((local_path / f).exists() for f in ["s3gen.safetensors", "conds.pt"]):
+            print(f"[ChatterboxVC] 从本地加载模型: {local_dir}")
+        else:
+            print(f"[ChatterboxVC] 本地模型不完整，从 HF 下载...")
+            for fpath in ["s3gen.safetensors", "conds.pt"]:
+                hf_hub_download(repo_id=REPO_ID, filename=fpath)
+            local_path = Path(hf_hub_download(repo_id=REPO_ID, filename="conds.pt")).parent
+
+        return cls.from_local(local_path, device)
 
     def set_target_voice(self, wav_fpath):
         ## Load reference wav

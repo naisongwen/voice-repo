@@ -192,15 +192,25 @@ class ChatterboxMultilingualTTS:
 
     @classmethod
     def from_pretrained(cls, device: torch.device) -> 'ChatterboxMultilingualTTS':
-        ckpt_dir = Path(
-            snapshot_download(
-                repo_id=REPO_ID,
-                repo_type="model",
-                revision="main", 
-                allow_patterns=["ve.pt", "t3_mtl23ls_v2.safetensors", "s3gen.pt", "grapheme_mtl_merged_expanded_v1.json", "conds.pt", "Cangjie5_TC.json"],
-                token=os.getenv("HF_TOKEN"),
+        # 优先本地加载，下载失败才走 HF
+        local_dir = os.getenv("CHATTERBOX_MODEL_DIR", "/data/workdir/chatterbox_models")
+        local_path = Path(local_dir)
+        required = ["ve.pt", "t3_mtl23ls_v2.safetensors", "s3gen.pt",
+                     "grapheme_mtl_merged_expanded_v1.json", "conds.pt", "Cangjie5_TC.json"]
+        if local_path.exists() and all((local_path / f).exists() for f in required):
+            print(f"[ChatterboxTTS] 从本地加载模型: {local_dir}")
+            ckpt_dir = local_path
+        else:
+            print(f"[ChatterboxTTS] 本地模型不完整，从 HF 下载...")
+            ckpt_dir = Path(
+                snapshot_download(
+                    repo_id=REPO_ID,
+                    repo_type="model",
+                    revision="main",
+                    allow_patterns=required,
+                    token=os.getenv("HF_TOKEN"),
+                )
             )
-        )
         return cls.from_local(ckpt_dir, device)
     
     def prepare_conditionals(self, wav_fpath, exaggeration=0.5):
